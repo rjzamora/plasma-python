@@ -126,7 +126,6 @@ serving:
     num_tests: 10 #Number of test shots
     server: localhost:9000 #PredictionService host:port
     request_freq: 10.0 # 10 secs timeout
-    save_model_path: 'export_frnn'
     version: '1' #if serving multiple versions of FRNN model
 callbacks:
     list: ['earlystop']

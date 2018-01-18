@@ -25,6 +25,7 @@ def parameters(input_file):
         params['paths']['output_path'] = output_path
         h = get_unique_signal_hash(all_signals.values())
         params['paths']['global_normalizer_path'] = output_path + '/normalization/normalization_signal_group_{}.npz'.format(h)
+        params['paths']['serving_save_path'] = os.path.join(output_path,"serving_model_checkpoints")
         if params['training']['hyperparam_tuning']:
             # params['paths']['saved_shotlist_path'] = './normalization/shot_lists.npz'
             params['paths']['normalizer_path'] = './normalization/normalization_signal_group_{}.npz'.format(h)

@@ -1,4 +1,4 @@
-import os
+import sys,os
 import numpy as np
 
 import keras.backend as K
@@ -15,26 +15,38 @@ from plasma.conf import conf
 from plasma.models import builder
 from plasma.models.runner import optimizer_class
 
+import pdb
+
+use_custom_path = len(sys.argv) > 1
+custom_path = None
+if use_custom_path:
+    custom_path = sys.argv[1]
+    print("Predicting using path {}".format(custom_path))
+
+#Set to zero
+K.set_learning_phase(0)
+
 #Load model
 specific_builder = builder.ModelBuilder(conf)
 model = specific_builder.build_model(False)
 model.compile(optimizer=optimizer_class(),loss=conf['data']['target'].loss)
-model.load_weights("/tigress/alexeys/model_checkpoints/model.143446175634456912039484164450187267403._epoch_.0.h5")
+#load the latest epoch we did. Returns -1 if none exist yet
+e = specific_builder.load_model_weights(model,custom_path)
+if e < 0:
+    print("Pretrained model is not available. Train the model first!")
+    sys.exit(1)
 
-config = model.get_config()
-weights = model.get_weights()
-new_model = Model.from_config(config)
-new_model.set_weights(weights)
+model.reset_states()
 
-#Set to zero
-K.set_learning_phase(0)
-export_path = os.path.join(conf['paths']['base_path'],conf['serving']['save_model_path'],conf['serving']['version'])
+export_path = os.path.join(conf['paths']['serving_save_path'],conf['serving']['version'])
 builder = saved_model_builder.SavedModelBuilder(export_path)
-signature = predict_signature_def(inputs={'shots': new_model.input},
-                                  outputs={'scores': new_model.output})
+signature = predict_signature_def(inputs={'shots': model.input},
+                                  outputs={'scores': model.output})
 with K.get_session() as sess:
     builder.add_meta_graph_and_variables(sess=sess,
        tags=[tag_constants.SERVING],
-       signature_def_map={'predict': signature}) #this will set the request.model_spec.signature_name = 'predict'
+       #this will require set the request.model_spec.signature_name = 'predict'
+       signature_def_map={'predict': signature})
     builder.save()
+
 print ('Done exporting the model for serving! The model is in {}'.format(export_path))

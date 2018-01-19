@@ -614,6 +614,8 @@ class PerformanceAnalyzer():
             truth = self.truth_train
             is_disruptive = self.disruptive_train
             shot_list = self.shot_list_train
+            if not isinstance(shot_list,ShotList):
+                shot_list = ShotList(shot_list)
         plotted = 0
         iterate_arr = np.arange(len(truth))
         np.random.shuffle(iterate_arr)

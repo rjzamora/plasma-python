@@ -44,9 +44,11 @@ def main(_):
     channel = implementations.insecure_channel(host, int(port))
     stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
     p_threshold = conf['serving']['p_threshold']
-    for i in range(conf['serving']['num_tests']):
+    while True:
         try:
-            batch_xs,batch_ys,_,_,_,is_disruptive,shot_number = next(batch_iterator_func)
+            batch_xs,batch_ys,_,num_so_far,_,is_disruptive,shot_number = next(batch_iterator_func)
+            #inference batch generator is infinite. Need to stop after num_tests shots is drawn
+            if num_so_far > conf['serving']['num_tests']: break
         except StopIteration:
             break
 

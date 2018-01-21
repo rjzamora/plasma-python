@@ -1,8 +1,13 @@
-#Real-time inference with TensorFlow Serving
+# Real-time inference with TensorFlow Serving
 
 **Note**: TensorFlow serving Python api only works under Python2.7.
+**Note**: this code is currently in a local `realtime_inference` branch, so you would need to:
+```bash
+git checkout realtime_inference
+python setup.py install
+```
 
-This assumes you have trained a model following:
+This assumes you have already pre-trained a model following this tutorial:
 https://github.com/PPPLDeepLearning/plasma-python/blob/master/docs/PrincetonUTutorial.md
 
 ## Configure serving

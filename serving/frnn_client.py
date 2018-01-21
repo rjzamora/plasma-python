@@ -60,12 +60,12 @@ def main(_):
         prediction = stub.Predict(request, conf['serving']['request_freq'])
         y_p = np.expand_dims(prediction.outputs['scores'].float_val, axis=0)
         if np.any(y_p > p_threshold):
-            if np.any(batch_ys != -1) 
+            if np.any(batch_ys != -1): 
                 print("True disruption is coming!")
             else:
                 print("False positive disruption is coming!")
         else:
-            if np.any(batch_ys != -1)
+            if np.any(batch_ys != -1):
                 print("False negative: disruption is not detected")
             else:
                 print("True engative: no disruption")

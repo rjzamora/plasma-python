@@ -127,6 +127,7 @@ serving:
     server: localhost:9000 #PredictionService host:port
     request_freq: 10.0 # 10 secs timeout
     version: '1' #if serving multiple versions of FRNN model
+    p_threshold: -1.287 #best alarm threshold determined by performance analyzer
 callbacks:
     list: ['earlystop']
     metrics: ['val_loss','val_roc','train_loss']

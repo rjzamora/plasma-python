@@ -35,16 +35,20 @@ def main(_):
     normalizer.train()
     loader = Loader(conf,normalizer)
     shot_list_train,shot_list_validate,shot_list_test = guarantee_preprocessed(conf)
-    batch_generator = partial(loader.training_batch_generator_partial_reset,shot_list=shot_list_train)
-    #ProcessGenerator(batch_generator())
+    batch_generator = partial(loader.inference_batch_generator_partial_reset,shot_list=shot_list_test)
+    ##ProcessGenerator(batch_generator())
     batch_iterator_func = batch_generator()
-    for i in range(conf['serving']['num_tests']):
-        batch_xs,_,_,_,_,_ = next(batch_iterator_func)
 
-        hostport = conf['serving']['server']
-        host, port = hostport.split(':')
-        channel = implementations.insecure_channel(host, int(port))
-        stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
+    hostport = conf['serving']['server']
+    host, port = hostport.split(':')
+    channel = implementations.insecure_channel(host, int(port))
+    stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
+    p_threshold = conf['serving']['p_threshold']
+    for i in range(conf['serving']['num_tests']):
+        try:
+            batch_xs,batch_ys,_,_,_,is_disruptive,shot_number = next(batch_iterator_func)
+        except StopIteration:
+            break
 
         request = predict_pb2.PredictRequest()
         request.model_spec.name = 'frnn_model'
@@ -52,8 +56,18 @@ def main(_):
         request.inputs['shots'].CopyFrom(tf.contrib.util.make_tensor_proto(batch_xs,dtype=tf.float32))
 
         prediction = stub.Predict(request, conf['serving']['request_freq'])
-        result = np.expand_dims(prediction.outputs['scores'].float_val, axis=0).reshape(conf['training']['batch_size'],conf['model']['length'],1)
-        print("Inference request {} {}".format(i,result))
+        y_p = np.expand_dims(prediction.outputs['scores'].float_val, axis=0)
+        if np.any(y_p > p_threshold):
+            if np.any(batch_ys != -1) 
+                print("True disruption is coming!")
+            else:
+                print("False positive disruption is coming!")
+        else:
+            if np.any(batch_ys != -1)
+                print("False negative: disruption is not detected")
+            else:
+                print("True engative: no disruption")
+
 
 if __name__ == '__main__':
     tf.app.run()

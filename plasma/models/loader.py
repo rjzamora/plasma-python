@@ -130,7 +130,7 @@ class Loader(object):
 
 
 
-    def training_batch_generator_partial_reset(self,shot_list):
+    def training_batch_generator_partial_reset(self,shot_list,custom_batch_size=None):
         """
         The method implements a training batch generator as a Python generator with a while-loop.
         It iterates indefinitely over the data set and returns one mini-batch of data at a time.
@@ -146,7 +146,10 @@ class Loader(object):
           - reset_states_now: boolean flag indicating when to reset state during stateful RNN training
           - num_so_far,num_total: number of samples generated so far and the total dataset size as per shot_list
         """
-        batch_size = self.conf['training']['batch_size']
+        if custom_batch_size is None:
+            batch_size = self.conf['training']['batch_size']
+        else: batch_size = custom_batch_size 
+
         length = self.conf['model']['length']
         sig,res = self.get_signal_result_from_shot(shot_list.shots[0])
         Xbuff = np.empty((batch_size,) + sig.shape,dtype=self.conf['data']['floatx'])
@@ -603,6 +606,36 @@ class Loader(object):
         return 1 + (length-1)//skip
 
 
+    def inference_batch_generator_partial_reset(self,shot_list,custom_batch_size=1):
+        batch_size = custom_batch_size
+
+        length = self.conf['model']['length']
+        sig,res = self.get_signal_result_from_shot(shot_list.shots[0])
+        Xbuff = np.empty((batch_size,) + sig.shape,dtype=self.conf['data']['floatx'])
+        Ybuff = np.empty((batch_size,) + res.shape,dtype=self.conf['data']['floatx'])
+        end_indices = np.zeros(batch_size,dtype=np.int)
+        batches_to_reset = np.ones(batch_size,dtype=np.bool)
+
+        # epoch = 0
+        num_total = len(shot_list)
+        num_so_far = 0
+        returned = False
+        while True:
+            #the list of all shots
+            #shot_list.shuffle() 
+            for i in range(self.conf['serving']['num_tests']): #len(shot_list)):
+                shot = shot_list.shots[i]
+                while not np.any(end_indices == 0):
+                    X,Y = self.return_from_training_buffer(Xbuff,Ybuff,end_indices)
+                    yield X,Y,batches_to_reset,num_so_far,num_total,shot.is_disruptive,shot.number
+                    returned = True
+                    batches_to_reset[:] = False
+
+                Xbuff,Ybuff,batch_idx = self.fill_training_buffer(Xbuff,Ybuff,end_indices,shot)
+                batches_to_reset[batch_idx] = True
+                if returned:
+                    num_so_far += 1
+
 class ProcessGenerator(object):
     def __init__(self,generator):
         self.generator = generator
@@ -624,3 +657,64 @@ class ProcessGenerator(object):
     def __exit__(self):
         self.proc.terminate()
         self.queue.close()
+
+
+
+
+    def training_batch_generator_partial_reset(self,shot_list,custom_batch_size=None):
+        """
+        The method implements a training batch generator as a Python generator with a while-loop.
+        It iterates indefinitely over the data set and returns one mini-batch of data at a time.
+
+        NOTE: Can be inefficient during distributed training because one process loading data will
+        cause all other processes to stall.
+
+        Argument list: 
+          - shot_list:
+
+        Returns:  
+          - One mini-batch of data and label as a Numpy array: X[start:end],y[start:end]
+          - reset_states_now: boolean flag indicating when to reset state during stateful RNN training
+          - num_so_far,num_total: number of samples generated so far and the total dataset size as per shot_list
+        """
+        if custom_batch_size is None:
+            batch_size = self.conf['training']['batch_size']
+        else: batch_size = custom_batch_size 
+
+        length = self.conf['model']['length']
+        sig,res = self.get_signal_result_from_shot(shot_list.shots[0])
+        Xbuff = np.empty((batch_size,) + sig.shape,dtype=self.conf['data']['floatx'])
+        Ybuff = np.empty((batch_size,) + res.shape,dtype=self.conf['data']['floatx'])
+        end_indices = np.zeros(batch_size,dtype=np.int)
+        batches_to_reset = np.ones(batch_size,dtype=np.bool)
+        # epoch = 0
+        num_total = len(shot_list)
+        num_so_far = 0
+        returned = False
+        warmup_steps = self.conf['training']['batch_generator_warmup_steps']
+        is_warmup_period = warmup_steps > 0
+        while True:
+            # the list of all shots
+            shot_list.shuffle() 
+            for i in range(len(shot_list)):
+                if self.conf['training']['ranking_difficulty_fac'] == 1.0:
+                    if self.conf['data']['equalize_classes']:
+                        shot = shot_list.sample_equal_classes()
+                    else:
+                        shot = shot_list.shots[i]
+                else: #draw the shot weighted
+                    shot = shot_list.sample_weighted()
+                while not np.any(end_indices == 0):
+                    X,Y = self.return_from_training_buffer(Xbuff,Ybuff,end_indices)
+                    yield X,Y,batches_to_reset,num_so_far,num_total,is_warmup_period
+                    returned = True
+                    warmup_steps -= 1
+                    is_warmup_period = warmup_steps > 0
+                    batches_to_reset[:] = False
+
+                Xbuff,Ybuff,batch_idx = self.fill_training_buffer(Xbuff,Ybuff,end_indices,shot)
+                batches_to_reset[batch_idx] = True
+                if returned and not is_warmup_period:
+                    num_so_far += 1
+            # epoch += 1
+

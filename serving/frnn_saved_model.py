@@ -28,7 +28,7 @@ K.set_learning_phase(0)
 
 #Load model
 specific_builder = builder.ModelBuilder(conf)
-model = specific_builder.build_model(False)
+model = specific_builder.build_model(False,1)
 model.compile(optimizer=optimizer_class(),loss=conf['data']['target'].loss)
 #load the latest epoch we did. Returns -1 if none exist yet
 e = specific_builder.load_model_weights(model,custom_path)

@@ -41,6 +41,7 @@ $ls /tigress/alexeys/serving _model_checkpoints
 
 Serving FRNN models in real-time requires a gRPC server. In this case, we spin up a gRPC local server at port `9000`:
 ```
+#See: https://www.tensorflow.org/serving/serving_basic under "Load Exported Model With Standard TensorFlow ModelServer"
 #bazel build -c opt //tensorflow_serving/model_servers:tensorflow_model_server
 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --port=9000 --model_name=frnn_model --model_base_path=/tigress/alexeys/export_frnn
 ```

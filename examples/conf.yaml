@@ -2,7 +2,7 @@
 
 #will do stuff in fs_path / [username] / signal_data | shot_lists | processed shots, etc.
 
-fs_path: '/tigress'
+fs_path: '/projects/datascience'
 target: 'hinge' #'maxhinge' #'maxhinge' #'binary' #'hinge'
 num_gpus: 1
 knl_device: True # The 'GPUs' are actually Intel KNL Chips (Eg. ALCF Theta)

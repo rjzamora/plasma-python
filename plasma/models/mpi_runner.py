@@ -16,7 +16,7 @@ This work was supported by the DOE CSGF program.
 
 from __future__ import print_function
 import os
-import sys 
+import sys
 import time
 import datetime
 import numpy as np
@@ -28,7 +28,7 @@ sys.setrecursionlimit(10000)
 import getpass
 
 #import keras sequentially because it otherwise reads from ~/.keras/keras.json with too many threads.
-#from mpi_launch_tensorflow import get_mpi_task_index 
+#from mpi_launch_tensorflow import get_mpi_task_index
 import mpi4py
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
@@ -41,18 +41,26 @@ from plasma.utils.state_reset import reset_states,get_states
 from plasma.models.loader import ProcessGenerator
 
 NUM_GPUS = conf['num_gpus']
+KNL_DEVICE = conf['knl_device'] # If True, GPU device is actually an Intel KNL Chip
 MY_GPU = task_index % NUM_GPUS
 
 backend = conf['model']['backend']
 
 if backend == 'tf' or backend == 'tensorflow':
-    if NUM_GPUS > 1: os.environ['CUDA_VISIBLE_DEVICES'] = '{}'.format(MY_GPU)#,mode=NanGuardMode'
-    os.environ['KERAS_BACKEND'] = 'tensorflow'
-    import tensorflow as tf
-    from keras.backend.tensorflow_backend import set_session
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95, allow_growth=True)
-    config = tf.ConfigProto(gpu_options=gpu_options)
-    set_session(tf.Session(config=config))
+    if KNL_DEVICE:
+        os.environ['KERAS_BACKEND'] = 'tensorflow'
+        import tensorflow as tf
+        from keras.backend.tensorflow_backend import set_session
+        config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=os.environ['OMP_NUM_THREADS'])
+        set_session(tf.Session(config=config))
+    else:
+        if NUM_GPUS > 1: os.environ['CUDA_VISIBLE_DEVICES'] = '{}'.format(MY_GPU)#,mode=NanGuardMode'
+        os.environ['KERAS_BACKEND'] = 'tensorflow'
+        import tensorflow as tf
+        from keras.backend.tensorflow_backend import set_session
+        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95, allow_growth=True)
+        config = tf.ConfigProto(gpu_options=gpu_options)
+        set_session(tf.Session(config=config))
 else:
     os.environ['KERAS_BACKEND'] = 'theano'
     base_compile_dir = '{}/tmp/{}-{}'.format(conf['paths']['output_path'],socket.gethostname(),task_index)
@@ -65,7 +73,7 @@ for i in range(num_workers):
     print('[{}] importing Keras'.format(task_index))
     from keras import backend as K
     from keras.optimizers import *
-    from keras.utils.generic_utils import Progbar 
+    from keras.utils.generic_utils import Progbar
     import keras.callbacks as cbks
 
 from plasma.models import builder
@@ -107,7 +115,7 @@ class MPIMomentumSGD(MPIOptimizer):
         super(MPIMomentumSGD, self).__init__(lr)
         self.momentum = 0.9
 
-    def get_deltas(self, raw_deltas): 
+    def get_deltas(self, raw_deltas):
         deltas = []
 
         if self.iterations == 0:
@@ -228,7 +236,7 @@ class MPIModel():
         exit(1)
     self.model.compile(optimizer=optimizer_class,loss=loss)
     self.ensure_equal_weights()
-    
+
   def ensure_equal_weights(self):
     if task_index == 0:
         new_weights = self.model.get_weights()
@@ -245,14 +253,14 @@ class MPIModel():
     Given a mini-batch, it first accesses the current model weights, performs single gradient update over one mini-batch,
     gets new model weights, calculates weight updates (deltas) by subtracting weight scalars, applies the learning rate.
 
-    It performs calls to: subtract_params, multiply_params 
+    It performs calls to: subtract_params, multiply_params
 
-    Argument list: 
+    Argument list:
       - X_batch: input data for one mini-batch as a Numpy array
       - Y_batch: labels for one mini-batch as a Numpy array
       - verbose: set verbosity level (currently unused)
 
-    Returns:  
+    Returns:
       - deltas: a list of model weight updates
       - loss: scalar training loss
     '''
@@ -262,17 +270,17 @@ class MPIModel():
 
     weights_after_update = self.model.get_weights()
     self.model.set_weights(weights_before_update)
- 
+
     #unscale before subtracting
-    weights_before_update = multiply_params(weights_before_update,1.0/self.DUMMY_LR) 
-    weights_after_update = multiply_params(weights_after_update,1.0/self.DUMMY_LR) 
+    weights_before_update = multiply_params(weights_before_update,1.0/self.DUMMY_LR)
+    weights_after_update = multiply_params(weights_after_update,1.0/self.DUMMY_LR)
 
     deltas = subtract_params(weights_after_update,weights_before_update)
-    
+
     #unscale loss
     if conf['model']['loss_scale_factor'] != 1.0:
         deltas = multiply_params(deltas,1.0/conf['model']['loss_scale_factor'])
- 
+
     return deltas,loss
 
 
@@ -281,7 +289,7 @@ class MPIModel():
 
   def mpi_average_gradients(self,arr,num_replicas=None):
     if num_replicas == None:
-      num_replicas = self.num_workers 
+      num_replicas = self.num_workers
     if self.task_index >= num_replicas:
       arr *= 0.0
     arr_global = np.empty_like(arr)
@@ -300,11 +308,11 @@ class MPIModel():
 
     It performs calls to: MPIModel.mpi_sum_scalars
 
-    Argument list: 
+    Argument list:
       - val: value averaged, scalar
       - num_replicas: the size of the ensemble an average is perfromed over
 
-    Returns:  
+    Returns:
       - val_global: scalar arithmetic mean over num_replicas
     '''
     val_global = self.mpi_sum_scalars(val,num_replicas)
@@ -316,18 +324,18 @@ class MPIModel():
     '''
     The purpose of the method is to calculate a simple scalar arithmetic mean over num_replicas using MPI allreduce action with fixed op=MPI.SIM
 
-    Argument list: 
+    Argument list:
       - val: value averaged, scalar
       - num_replicas: the size of the ensemble an average is perfromed over
 
-    Returns:  
+    Returns:
       - val_global: scalar arithmetic mean over num_replicas
     '''
     if num_replicas == None:
-      num_replicas = self.num_workers 
+      num_replicas = self.num_workers
     if self.task_index >= num_replicas:
       val *= 0.0
-    val_global = 0.0 
+    val_global = 0.0
     val_global = self.comm.allreduce(val,op=MPI.SUM)
     return val_global
 
@@ -338,7 +346,7 @@ class MPIModel():
     #default is to reduce the deltas from all workers
     for delta in deltas:
       global_deltas.append(self.mpi_average_gradients(delta,num_replicas))
-    return global_deltas 
+    return global_deltas
 
   def set_new_weights(self,deltas,num_replicas=None):
     global_deltas = self.sync_deltas(deltas,num_replicas)
@@ -355,14 +363,14 @@ class MPIModel():
       The purpose of the method is to set up logging and history. It is based on Keras Callbacks
       https://github.com/fchollet/keras/blob/fbc9a18f0abc5784607cd4a2a3886558efa3f794/keras/callbacks.py
 
-      Currently used callbacks include: BaseLogger, CSVLogger, EarlyStopping. 
+      Currently used callbacks include: BaseLogger, CSVLogger, EarlyStopping.
       Other possible callbacks to add in future: RemoteMonitor, LearningRateScheduler
 
-      Argument list: 
+      Argument list:
         - conf: There is a "callbacks" section in conf.yaml file. Relevant parameters are:
              list: Parameter specifying additional callbacks, read in the driver script and passed as an argument of type list (see next arg)
              metrics: List of quantities monitored during training and validation
-             mode: one of {auto, min, max}. The decision to overwrite the current save file is made based on either the maximization or the minimization of the monitored quantity. For val_acc, this should be max, for val_loss this should be min, etc. In auto mode, the direction is automatically inferred from the name of the monitored quantity. 
+             mode: one of {auto, min, max}. The decision to overwrite the current save file is made based on either the maximization or the minimization of the monitored quantity. For val_acc, this should be max, for val_loss this should be min, etc. In auto mode, the direction is automatically inferred from the name of the monitored quantity.
              monitor: Quantity used for early stopping, has to be from the list of metrics
              patience: Number of epochs used to decide on whether to apply early stopping or continue training
         - callbacks_list: uses callbacks.list configuration parameter, specifies the list of additional callbacks
@@ -383,34 +391,34 @@ class MPIModel():
       callbacks += [self.history]
       callbacks += [cbks.CSVLogger("{}callbacks-{}.log".format(csvlog_save_path,datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")))]
 
-      if "earlystop" in callbacks_list: 
+      if "earlystop" in callbacks_list:
           callbacks += [cbks.EarlyStopping(patience=patience, monitor=monitor, mode=mode)]
-      if "lr_scheduler" in callbacks_list: 
+      if "lr_scheduler" in callbacks_list:
           pass
-      
+
       return cbks.CallbackList(callbacks)
 
   def train_epoch(self):
     '''
     The purpose of the method is to perform distributed mini-batch SGD for one epoch.
     It takes the batch iterator function and a NN model from MPIModel object, fetches mini-batches
-    in a while-loop until number of samples seen by the ensemble of workers (num_so_far) exceeds the 
-    training dataset size (num_total). 
+    in a while-loop until number of samples seen by the ensemble of workers (num_so_far) exceeds the
+    training dataset size (num_total).
 
     During each iteration, the gradient updates (deltas) and the loss are calculated for each model replica
     in the ensemble, weights are averaged over ensemble, and the new weights are set.
 
-    It performs calls to: MPIModel.get_deltas, MPIModel.set_new_weights methods 
+    It performs calls to: MPIModel.get_deltas, MPIModel.set_new_weights methods
 
     Argument list: Empty
 
-    Returns:  
+    Returns:
       - step: epoch number
       - ave_loss: training loss averaged over replicas
       - curr_loss:
-      - num_so_far: the number of samples seen by ensemble of replicas to a current epoch (step) 
+      - num_so_far: the number of samples seen by ensemble of replicas to a current epoch (step)
 
-    Intermediate outputs and logging: debug printout of task_index (MPI), epoch number, number of samples seen to 
+    Intermediate outputs and logging: debug printout of task_index (MPI), epoch number, number of samples seen to
     a current epoch, average training loss
     '''
 
@@ -424,8 +432,8 @@ class MPIModel():
     num_total = 1
     ave_loss = -1
     curr_loss = -1
-    t0 = 0 
-    t1 = 0 
+    t0 = 0
+    t1 = 0
     t2 = 0
 
     while (self.num_so_far-self.epoch*num_total) < num_total or step < self.num_batches_minimum:
@@ -457,8 +465,8 @@ class MPIModel():
         sys.stdout.flush()
         print_unique('Compilation finished in {:.2f}s'.format(time.time()-t0_comp))
         t_start = time.time()
-        sys.stdout.flush()  
-      
+        sys.stdout.flush()
+
       if np.any(batches_to_reset):
         reset_states(self.model,batches_to_reset)
 
@@ -481,9 +489,9 @@ class MPIModel():
         step += 1
       else:
         print_unique('\r[{}] warmup phase, num so far: {}'.format(self.task_index,self.num_so_far))
-        
 
-      
+
+
 
     effective_epochs = 1.0*self.num_so_far/num_total
     epoch_previous = self.epoch
@@ -546,7 +554,7 @@ def add_params(params1,params2):
 
 
 def get_shot_list_path(conf):
-    return conf['paths']['base_path'] + '/normalization/shot_lists.npz' #kyle: not compatible with flexible conf.py hierarchy 
+    return conf['paths']['base_path'] + '/normalization/shot_lists.npz' #kyle: not compatible with flexible conf.py hierarchy
 
 def save_shotlists(conf,shot_list_train,shot_list_validate,shot_list_test):
     path = get_shot_list_path(conf)
@@ -566,7 +574,7 @@ def mpi_make_predictions(conf,shot_list,loader,custom_path=None):
     loader.set_inference_mode(True)
     np.random.seed(task_index)
     shot_list.sort()#make sure all replicas have the same list
-    specific_builder = builder.ModelBuilder(conf) 
+    specific_builder = builder.ModelBuilder(conf)
 
     y_prime = []
     y_gold = []
@@ -601,7 +609,7 @@ def mpi_make_predictions(conf,shot_list,loader,custom_path=None):
             X,y,shot_lengths,disr = loader.load_as_X_y_pred(shot_sublist)
 
 
-        
+
             #load data and fit on data
             y_p = model.predict(X,batch_size=conf['model']['pred_batch_size'])
             model.reset_states()
@@ -649,7 +657,7 @@ def mpi_make_predictions_and_evaluate(conf,shot_list,loader,custom_path=None):
     return y_prime,y_gold,disruptive,roc_area,loss
 
 
-def mpi_train(conf,shot_list_train,shot_list_validate,loader, callbacks_list=None):   
+def mpi_train(conf,shot_list_train,shot_list_validate,loader, callbacks_list=None):
 
     loader.set_inference_mode(False)
     conf['num_workers'] = comm.Get_size()
@@ -724,11 +732,11 @@ def mpi_train(conf,shot_list_train,shot_list_validate,loader, callbacks_list=Non
         e = e_old + effective_epochs
 
         loader.verbose=False #True during the first iteration
-        if task_index == 0: 
+        if task_index == 0:
             specific_builder.save_model_weights(train_model,int(round(e)))
 
         epoch_logs = {}
-        
+
         _,_,_,roc_area,loss = mpi_make_predictions_and_evaluate(conf,shot_list_validate,loader)
         if conf['training']['ranking_difficulty_fac'] != 1.0:
             _,_,_,roc_area_train,loss_train = mpi_make_predictions_and_evaluate(conf,shot_list_train,loader)
@@ -737,7 +745,7 @@ def mpi_train(conf,shot_list_train,shot_list_validate,loader, callbacks_list=Non
             mpi_model.batch_iterator_func.__exit__()
             mpi_model.num_so_far_accum = mpi_model.num_so_far_indiv
             mpi_model.set_batch_iterator_func()
-        epoch_logs['val_roc'] = roc_area 
+        epoch_logs['val_roc'] = roc_area
         epoch_logs['val_loss'] = loss
         epoch_logs['train_loss'] = ave_loss
         best_so_far = cmp_fn(epoch_logs[conf['callbacks']['monitor']],best_so_far)
@@ -819,7 +827,7 @@ class TensorBoard(object):
                         grads = [
                             grad.values if is_indexed_slices(grad) else grad
                             for grad in grads]
-                        for grad in grads: 
+                        for grad in grads:
                             tf.summary.histogram('{}_grad'.format(mapped_weight_name), grad)
 
                 if hasattr(layer, 'output'):
